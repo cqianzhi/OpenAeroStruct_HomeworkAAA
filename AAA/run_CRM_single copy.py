@@ -12,13 +12,6 @@ mesh_dict = {"num_y": 7, "num_x": 2, "wing_type": "CRM", "symmetry": True, "num_
 
 mesh, twist_cp = generate_mesh(mesh_dict)
 
-def make_naca4_symmetric(t_over_c, n_points=50):
-    x = (1 - np.cos(np.linspace(0, np.pi, n_points))) / 2
-    yt = 5 * t_over_c * (0.2969*np.sqrt(x) - 0.1260*x - 0.3516*x**2 + 0.2843*x**3 - 0.1015*x**4)
-    return x[::-1], yt[::-1], x, -yt
-
-data_x_upper, data_y_upper, data_x_lower, data_y_lower = make_naca4_symmetric(0.165)
-
 surface = {
     # Wing definition
     "name": "wing",  # name of the surface
@@ -26,18 +19,7 @@ surface = {
     # reflected across the plane y = 0
     "S_ref_type": "wetted",  # how we compute the wing area,
     # can be 'wetted' or 'projected'
-    "fem_model_type": "wingbox",
-    "original_wingbox_airfoil_t_over_c": 0.165, 
-    "data_x_upper": data_x_upper,
-    "data_y_upper": data_y_upper,
-    "data_x_lower": data_x_lower,
-    "data_y_lower": data_y_lower,
-    "strength_factor_for_upper_skin": 1.0,
-    "strength_factor_for_lower_skin": 1.0,
-    "strength_factor_for_front_spar": 1.0,
-    "strength_factor_for_rear_spar": 1.0,
-    # "spar_locations": [0.15, 0.7], # be ignored
-
+    "fem_model_type": "tube",
     "thickness_cp": np.array([0.1, 0.2, 0.3]),
     "twist_cp": twist_cp,
     "mesh": mesh,
@@ -127,32 +109,9 @@ prob.model.connect(name + ".nodes", point_name + ".coupled." + name + ".nodes")
 # Connect aerodyamic mesh to coupled group mesh
 prob.model.connect(name + ".mesh", point_name + ".coupled." + name + ".mesh")
 
-# Connect performance calculation variables for wingbox
-# The problem setup uses wingbox FEM; connect typical wingbox outputs
-# Only connect the structural properties that the performance group expects.
-# The perf group's structural component for wingbox expects Qz, J, A_enc,
-# and the distances htop/hbottom/hfront/hrear. spar_thickness and
-# skin_thickness are optional (only present if thickness CPs are provided).
-perf_vars = [
-    "Qz",
-    "J",
-    "A_enc",
-    "htop",
-    "hbottom",
-    "hfront",
-    "hrear",
-    "spar_thickness",
-    "skin_thickness",
-]
-
-for var in perf_vars:
-    try:
-        prob.model.connect(name + "." + var, com_name + "." + var)
-    except Exception:
-        # If the top-level surface group doesn't expose this variable, skip it.
-        pass
-
-# Common connections
+# Connect performance calculation variables
+prob.model.connect(name + ".radius", com_name + ".radius")
+prob.model.connect(name + ".thickness", com_name + ".thickness")
 prob.model.connect(name + ".nodes", com_name + ".nodes")
 prob.model.connect(name + ".cg_location", point_name + "." + "total_perf." + name + "_cg_location")
 prob.model.connect(name + ".structural_mass", point_name + "." + "total_perf." + name + "_structural_mass")
@@ -167,10 +126,10 @@ prob.driver.recording_options["record_derivatives"] = True
 prob.driver.recording_options["includes"] = ["*"]
 
 # Setup problem and add design variables, constraint, and objective
-# prob.model.add_design_var("wing.twist_cp", lower=-10.0, upper=15.0)
-# prob.model.add_design_var("wing.thickness_cp", lower=0.01, upper=0.5, scaler=1e2)
+prob.model.add_design_var("wing.twist_cp", lower=-10.0, upper=15.0)
+prob.model.add_design_var("wing.thickness_cp", lower=0.01, upper=0.5, scaler=1e2)
 prob.model.add_constraint("AS_point_0.wing_perf.failure", upper=0.0)
-# prob.model.add_constraint("AS_point_0.wing_perf.thickness_intersects", upper=0.0)
+prob.model.add_constraint("AS_point_0.wing_perf.thickness_intersects", upper=0.0)
 
 # Add design variables, constraisnt, and objective on the problem
 prob.model.add_design_var("alpha", lower=-10.0, upper=10.0)
