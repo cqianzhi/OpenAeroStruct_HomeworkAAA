@@ -397,6 +397,23 @@ class EvalVelMtx(om.ExplicitComponent):
                 if right_wing:
                     outputs[vel_mtx_name] = outputs[vel_mtx_name][:, :, ::-1, :]
 
+            # Diagnostics: check for non-finite values in the assembled vel_mtx
+            try:
+                import numpy as _np
+
+                mtx = outputs[vel_mtx_name]
+                if not _np.isfinite(mtx).all():
+                    print(f"[EvalVelMtx] WARNING: non-finite entries in {vel_mtx_name}")
+                    print("  shape:", mtx.shape)
+                    nonfinite_count = int((~_np.isfinite(mtx)).sum())
+                    print("  nonfinite count:", nonfinite_count)
+                    # check input vectors too
+                    vecs = inputs[vectors_name]
+                    print("  input vectors shape:", vecs.shape)
+                    print("  any nonfinite in input vectors:", int((~_np.isfinite(vecs)).sum()))
+            except Exception:
+                pass
+
     def compute_partials(self, inputs, partials):
         surfaces = self.options["surfaces"]
         eval_name = self.options["eval_name"]

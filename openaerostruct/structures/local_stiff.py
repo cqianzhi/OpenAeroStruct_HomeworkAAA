@@ -67,6 +67,16 @@ class LocalStiff(om.ExplicitComponent):
         J = inputs["J"]
         L = inputs["element_lengths"]
 
+        # Diagnostic: check element lengths for zeros or non-finite values
+        try:
+            import numpy as _np
+            nonfinite_count = _np.count_nonzero(~_np.isfinite(L))
+            zero_count = _np.count_nonzero(_np.isclose(L, 0.0))
+            if nonfinite_count or zero_count:
+                print(f"[local_stiff] WARNING: element_lengths nonfinite={nonfinite_count} zeros={zero_count} L={L}")
+        except Exception:
+            pass
+
         outputs["local_stiff"] = 0.0
 
         for i in range(2):

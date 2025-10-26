@@ -8,7 +8,7 @@ import openmdao.api as om
 from openaerostruct.utils.constants import grav_constant
 
 # Create a dictionary to store options about the surface
-mesh_dict = {"num_y": 5, "num_x": 2, "wing_type": "CRM", "symmetry": True, "num_twist_cp": 5}
+mesh_dict = {"num_y": 7, "num_x": 2, "wing_type": "CRM", "symmetry": True, "num_twist_cp": 5}
 
 mesh, twist_cp = generate_mesh(mesh_dict)
 

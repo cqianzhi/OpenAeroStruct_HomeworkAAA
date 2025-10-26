@@ -86,6 +86,25 @@ class DisplacementTransfer(om.ExplicitComponent):
         # First set the deformed mesh with the undeformed mesh values
         outputs["def_mesh"] = inputs["mesh"].copy()
 
+        # Diagnostics: check inputs for non-finite values that would
+        # propagate into the deformed mesh
+        try:
+            import numpy as _np
+
+            if not _np.isfinite(inputs["mesh"]).all():
+                print("[DisplacementTransfer] WARNING: non-finite in input mesh", int((~_np.isfinite(inputs["mesh"])).sum()))
+            if not _np.isfinite(inputs["disp"]).all():
+                print("[DisplacementTransfer] WARNING: non-finite in disp", int((~_np.isfinite(inputs["disp"])).sum()))
+            if not _np.isfinite(inputs["transformation_matrix"]).all():
+                print(
+                    "[DisplacementTransfer] WARNING: non-finite in transformation_matrix",
+                    int((~_np.isfinite(inputs["transformation_matrix"])).sum()),
+                )
+            if not _np.isfinite(inputs["nodes"]).all():
+                print("[DisplacementTransfer] WARNING: non-finite in nodes", int((~_np.isfinite(inputs["nodes"])).sum()))
+        except Exception:
+            pass
+
         # Add the translational displacements to the deformed mesh.
         # These are simply the x,y,z displacements getting added to all nodal
         # mesh points.

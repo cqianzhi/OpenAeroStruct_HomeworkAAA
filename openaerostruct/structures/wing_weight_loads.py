@@ -176,6 +176,20 @@ class StructureWeightLoads(om.ExplicitComponent):
 
         element_lengths = norm(nodes[1:, :] - nodes[:-1, :], axis=1)
 
+        # Diagnostic: report zeros / non-finite in element lengths and node deltas
+        try:
+            import numpy as _np
+            el_nonfinite = _np.count_nonzero(~_np.isfinite(element_lengths))
+            el_zero = _np.count_nonzero(_np.isclose(element_lengths, 0.0))
+            if el_nonfinite or el_zero:
+                print(f"[wing_weight_loads] WARNING: element_lengths has nonfinite={el_nonfinite} zeros={el_zero} shape={element_lengths.shape}")
+                # print a small summary of the nodes and deltas
+                deltas = nodes[1:, :] - nodes[:-1, :]
+                print(f"[wing_weight_loads] nodes (first 6): {nodes.reshape(-1)[:18]}")
+                print(f"[wing_weight_loads] deltas (first 6): {deltas.reshape(-1)[:18]}")
+        except Exception:
+            pass
+
         # And we also need the deltas between consecutive nodes
         deltas = nodes[1:, :] - nodes[:-1, :]
         # save these slices cause I use them a lot
@@ -197,11 +211,14 @@ class StructureWeightLoads(om.ExplicitComponent):
         loads[1:, 2] += -z_forces_for_each
 
         # Bending moments for consistency
-        bm3 = z_moments_for_each * del1 / element_lengths
+        # Protect against division by zero / non-finite element lengths
+        with np.errstate(divide='ignore', invalid='ignore'):
+            bm3 = z_moments_for_each * del1 / element_lengths
         loads[:-1, 3] += -bm3
         loads[1:, 3] += bm3
 
-        bm4 = z_moments_for_each * del0 / element_lengths
+        with np.errstate(divide='ignore', invalid='ignore'):
+            bm4 = z_moments_for_each * del0 / element_lengths
         loads[:-1, 4] += -bm4
         loads[1:, 4] += bm4
         outputs["struct_weight_loads"] = loads

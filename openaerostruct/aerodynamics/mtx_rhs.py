@@ -148,10 +148,86 @@ class VLMMtxRHSComp(om.ExplicitComponent):
 
             ind_1 += num
 
+        # Diagnostic checks: detect NaNs/Infs in assembled pieces before
+        # performing the einsum that creates the final AIC matrix. These
+        # diagnostics help track down where invalid numbers originate.
+        try:
+            import numpy as _np
+
+            # Check vel_mtx blocks
+            vel_has_nonfinite = ~_np.isfinite(self.mtx_n_n_3)
+            if vel_has_nonfinite.any():
+                print("[VLMMtxRHSComp] WARNING: non-finite entries found in assembled vel_mtx (mtx_n_n_3)")
+                print("  mtx_n_n_3 shape:", self.mtx_n_n_3.shape)
+                print("  nonfinite count:", int(vel_has_nonfinite.sum()))
+                # show min/max of finite values if any
+                finite_vals = self.mtx_n_n_3[_np.isfinite(self.mtx_n_n_3)]
+                if finite_vals.size:
+                    print("  finite min/max:", finite_vals.min(), finite_vals.max())
+
+            # Check normals
+            norm_has_nonfinite = ~_np.isfinite(self.normals_n_3)
+            if norm_has_nonfinite.any():
+                print("[VLMMtxRHSComp] WARNING: non-finite entries found in normals_n_3")
+                print("  normals_n_3 shape:", self.normals_n_3.shape)
+                print("  nonfinite count:", int(norm_has_nonfinite.sum()))
+                finite_vals = self.normals_n_3[_np.isfinite(self.normals_n_3)]
+                if finite_vals.size:
+                    print("  finite min/max:", finite_vals.min(), finite_vals.max())
+
+            # Check freestream velocities
+            fs = inputs["freestream_velocities"]
+            fs_nonfinite = ~_np.isfinite(fs)
+            if fs_nonfinite.any():
+                print("[VLMMtxRHSComp] WARNING: non-finite entries found in freestream_velocities")
+                print("  freestream_velocities shape:", fs.shape)
+                print("  nonfinite count:", int(fs_nonfinite.sum()))
+
+        except Exception:
+            # Don't allow diagnostics to break execution; fall back to normal
+            pass
+
         # Actually obtain the final matrix by multiplying through with the
         # normals. Also create the rhs based on v dot n.
         outputs["mtx"] = np.einsum("ijk,ik->ij", self.mtx_n_n_3, self.normals_n_3)
         outputs["rhs"] = -np.einsum("ij,ij->i", inputs["freestream_velocities"], self.normals_n_3)
+
+        # Check the final mtx for non-finite values (NaN/Inf) and print
+        # diagnostics to help trace their origin.
+        try:
+            import numpy as _np
+
+            mtx = outputs["mtx"]
+            nonfinite = ~_np.isfinite(mtx)
+            if nonfinite.any():
+                print("[VLMMtxRHSComp] WARNING: final outputs['mtx'] contains non-finite entries")
+                print("  mtx shape:", mtx.shape)
+                print("  nonfinite count:", int(nonfinite.sum()))
+                # show some statistics of mtx
+                finite = mtx[_np.isfinite(mtx)]
+                if finite.size:
+                    print("  finite min/max:", finite.min(), finite.max())
+                else:
+                    print("  no finite entries in mtx")
+            else:
+                # Additional diagnostics when mtx is finite but the system may still be singular
+                diag = _np.diag(mtx)
+                zero_diag = _np.count_nonzero(_np.isclose(diag, 0.0))
+                if zero_diag:
+                    print(f"[VLMMtxRHSComp] WARNING: mtx has zero diagonal entries: {int(zero_diag)}\n  diag (first 10): {diag[:10]}")
+                try:
+                    cond = _np.linalg.cond(mtx)
+                except Exception:
+                    cond = float("inf")
+                # Print small summary
+                print(f"[VLMMtxRHSComp] mtx cond ~ {cond} min_abs {(_np.abs(mtx)).min()} max_abs {(_np.abs(mtx)).max()}")
+                # If the system is small, dump the matrix and diagonal for inspection
+                if mtx.shape[0] <= 12:
+                    print("[VLMMtxRHSComp] mtx dump:\n", mtx)
+                    print("[VLMMtxRHSComp] diag:\n", _np.diag(mtx))
+
+        except Exception:
+            pass
 
     def compute_partials(self, inputs, partials):
         surfaces = self.options["surfaces"]

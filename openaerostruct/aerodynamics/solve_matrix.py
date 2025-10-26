@@ -67,12 +67,53 @@ class SolveMatrix(om.ImplicitComponent):
         residuals["circulations"] = inputs["mtx"].dot(outputs["circulations"]) - inputs["rhs"]
 
     def solve_nonlinear(self, inputs, outputs):
-        self.lu = lu_factor(inputs["mtx"])
+        mtx = inputs["mtx"]
+        try:
+            import numpy as _np
+            nonfinite = _np.count_nonzero(~_np.isfinite(mtx))
+            diag = _np.diag(mtx)
+            zero_diag = _np.count_nonzero(_np.isclose(diag, 0.0))
+            if nonfinite or zero_diag:
+                print(f"[SolveMatrix] WARNING: mtx nonfinite={nonfinite} zero_diag={zero_diag} shape={mtx.shape}")
+                if nonfinite:
+                    # show a small summary
+                    print(f"[SolveMatrix] mtx nan/inf locations (flatten idx): {_np.nonzero(~_np.isfinite(mtx).flatten())[0]}")
+                print(f"[SolveMatrix] diag (first 10): {diag[:10]}")
+                try:
+                    cond = _np.linalg.cond(mtx)
+                except Exception:
+                    cond = float("inf")
+                print(f"[SolveMatrix] cond(mtx) ~ {cond}")
+        except Exception:
+            pass
+
+        # Factor and solve
+        self.lu = lu_factor(mtx)
 
         outputs["circulations"] = lu_solve(self.lu, inputs["rhs"])
 
     def linearize(self, inputs, outputs, partials):
         system_size = self.system_size
+        # Diagnostic before factoring in linearize
+        try:
+            import numpy as _np
+            mtx = inputs["mtx"]
+            nonfinite = _np.count_nonzero(~_np.isfinite(mtx))
+            diag = _np.diag(mtx)
+            zero_diag = _np.count_nonzero(_np.isclose(diag, 0.0))
+            if nonfinite or zero_diag:
+                print(f"[SolveMatrix.linearize] WARNING: mtx nonfinite={nonfinite} zero_diag={zero_diag} shape={mtx.shape}")
+                if nonfinite:
+                    print(f"[SolveMatrix.linearize] mtx nan/inf locations (flatten idx): {_np.nonzero(~_np.isfinite(mtx).flatten())[0]}")
+                print(f"[SolveMatrix.linearize] diag (first 10): {diag[:10]}")
+                try:
+                    cond = _np.linalg.cond(mtx)
+                except Exception:
+                    cond = float("inf")
+                print(f"[SolveMatrix.linearize] cond(mtx) ~ {cond}")
+        except Exception:
+            pass
+
         self.lu = lu_factor(inputs["mtx"])
 
         partials["circulations", "circulations"] = inputs["mtx"].flatten()

@@ -124,3 +124,28 @@ class GetVectors(om.ExplicitComponent):
 
             # Actually subtract the vectors.
             outputs[vectors_name] = eval_points_reshaped - mesh_reshaped
+
+            # Diagnostics: check for non-finite values in inputs and outputs
+            try:
+                import numpy as _np
+
+                mesh_in = inputs[mesh_name]
+                eval_in = inputs[eval_name]
+                out = outputs[vectors_name]
+
+                if not _np.isfinite(mesh_in).all():
+                    print(f"[GetVectors] WARNING: non-finite entries in {mesh_name}")
+                    print("  shape:", mesh_in.shape)
+                    print("  nonfinite count:", int((~_np.isfinite(mesh_in)).sum()))
+
+                if not _np.isfinite(eval_in).all():
+                    print(f"[GetVectors] WARNING: non-finite entries in {eval_name}")
+                    print("  shape:", eval_in.shape)
+                    print("  nonfinite count:", int((~_np.isfinite(eval_in)).sum()))
+
+                if not _np.isfinite(out).all():
+                    print(f"[GetVectors] WARNING: non-finite entries in output {vectors_name}")
+                    print("  output shape:", out.shape)
+                    print("  nonfinite count:", int((~_np.isfinite(out)).sum()))
+            except Exception:
+                pass

@@ -1,3 +1,12 @@
+import sys
+import os
+
+# Ensure the local repository's openaerostruct package is imported
+# (so edits in the workspace take effect instead of an installed package).
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
+
 import numpy as np
 
 from openaerostruct.meshing.mesh_generator import generate_mesh
@@ -13,6 +22,12 @@ mesh_dict = {"num_y": 7, "num_x": 2, "wing_type": "CRM", "symmetry": True}
 
 mesh, twist_cp = generate_mesh(mesh_dict)
 
+# Create a slightly offset mesh for the second surface to avoid exact
+# duplication of aerodynamic panels (which makes the AIC singular).
+mesh2 = mesh.copy()
+# tiny offset in z so panels are not identical
+mesh2[:, :, 2] = mesh2[:, :, 2] + 1e-6
+
 # 结构属性定义
 surface_single_spar = {
     # Wing definition
@@ -22,11 +37,11 @@ surface_single_spar = {
     # "S_ref_type": "wetted",  # how we compute the wing area,
     # can be 'wetted' or 'projected'
     "fem_model_type": "tube",
-    "mx": 2,
     "my": 7,
     "thickness_cp": np.array([0.1, 0.2, 0.3]),
     "twist_cp": twist_cp,
     "mesh": mesh,
+    "S_ref_type": "wetted",
 
     # Aerodynamic performance of the lifting surface at
     # an angle of attack of 0 (alpha=0).
@@ -50,7 +65,7 @@ surface_single_spar = {
     "G": 30.0e9,  # [Pa] shear modulus of the spar
     "yield": 500.0e6,
     "safety_factor": 2.5,  # [Pa] yield stress divided by 2.5 for limiting case
-    "rho": 3.0e3,  # [kg/m^3] material density
+    "mrho": 3.0e3,  # [kg/m^3] material density (use 'mrho' key expected by OAS)
     "fem_origin": 0.35,  # normalized chordwise location of the spar
 
     # BOOM
@@ -74,11 +89,11 @@ surface_double_spar = {
     # "S_ref_type": "wetted",  # how we compute the wing area,
     # can be 'wetted' or 'projected'
     "fem_model_type": "tube",
-    "mx": 2,
     "my": 7,
     "thickness_cp": np.array([0.1, 0.2, 0.3]),
     "twist_cp": twist_cp,
-    "mesh": mesh,
+    "mesh": mesh2,
+    "S_ref_type": "wetted",
 
     # Aerodynamic performance of the lifting surface at
     # an angle of attack of 0 (alpha=0).
@@ -102,7 +117,7 @@ surface_double_spar = {
     "G": 30.0e9,  # [Pa] shear modulus of the spar
     "yield": 500.0e6,
     "safety_factor": 2.5,  # [Pa] yield stress divided by 2.5 for limiting case
-    "rho": 3.0e3,  # [kg/m^3] material density
+    "mrho": 3.0e3,  # [kg/m^3] material density (use 'mrho' key expected by OAS)
     "fem_origin": 0.35,  # normalized chordwise location of the spar
 
     # BOOM
@@ -149,10 +164,23 @@ point_name = "AS_point_0"
 # Create the aero point group and add it to the model
 AS_point = AerostructPoint(surfaces=[surface_single_spar, surface_double_spar])
 
+# Add the aerostruct point and explicitly promote the expected inputs
 prob.model.add_subsystem(
     point_name,
     AS_point,
-    promotes_inputs=["*"],
+    promotes_inputs=[
+        "v",
+        "alpha",
+        "Mach_number",
+        "re",
+        "rho",
+        "CT",
+        "R",
+        "W0",
+        "speed_of_sound",
+        "empty_cg",
+        "load_factor",
+    ],
 )
 # prob.model.connect("inputs.v", "AS_point_0.v") 
 """
@@ -170,20 +198,22 @@ prob.model.connect("inputs.empty_cg", point_name + ".empty_cg")
 prob.model.connect("inputs.load_factor", point_name + ".load_factor")
 """
 """
-com_name = point_name + "." + name + "_perf"
-prob.model.connect(name + ".local_stiff_transformed", point_name + ".coupled." + name + ".local_stiff_transformed")
-prob.model.connect(name + ".nodes", point_name + ".coupled." + name + ".nodes")
+# Connect top-level surface groups to the AS point's coupled group and performance
+for name in ["wing_single_spar", "wing_double_spar"]:
+    com_name = point_name + "." + name + "_perf"
+    prob.model.connect(name + ".local_stiff_transformed", point_name + ".coupled." + name + ".local_stiff_transformed")
+    prob.model.connect(name + ".nodes", point_name + ".coupled." + name + ".nodes")
 
-# Connect aerodyamic mesh to coupled group mesh
-prob.model.connect(name + ".mesh", point_name + ".coupled." + name + ".mesh")
+    # Connect aerodynamic mesh to coupled group mesh
+    prob.model.connect(name + ".mesh", point_name + ".coupled." + name + ".mesh")
 
-# Connect performance calculation variables
-prob.model.connect(name + ".radius", com_name + ".radius")
-prob.model.connect(name + ".thickness", com_name + ".thickness")
-prob.model.connect(name + ".nodes", com_name + ".nodes")
-prob.model.connect(name + ".cg_location", point_name + "." + "total_perf." + name + "_cg_location")
-prob.model.connect(name + ".structural_mass", point_name + "." + "total_perf." + name + "_structural_mass")
-prob.model.connect(name + ".t_over_c", com_name + ".t_over_c")
+    # Connect performance calculation variables
+    prob.model.connect(name + ".radius", com_name + ".radius")
+    prob.model.connect(name + ".thickness", com_name + ".thickness")
+    prob.model.connect(name + ".nodes", com_name + ".nodes")
+    prob.model.connect(name + ".cg_location", point_name + "." + "total_perf." + name + "_cg_location")
+    prob.model.connect(name + ".structural_mass", point_name + "." + "total_perf." + name + "_structural_mass")
+    prob.model.connect(name + ".t_over_c", com_name + ".t_over_c")
 """
 
 # 设置优化器
@@ -217,13 +247,36 @@ prob.model.add_objective(point_name + ".fuelburn", scaler=1e-5) # 最小化燃�
 
 
 # Set up the problem
+# Instead of using zero defaults for promoted 'nodes' (which leaves nodes all zero),
+# connect the top-level geometry groups into the AS point's coupled groups so that
+# the FEM nodes and local stiffness come from the geometry groups.
+for name in ["wing_single_spar", "wing_double_spar"]:
+    # connect aerodynamic mesh to coupled group mesh
+    prob.model.connect(name + ".mesh", point_name + ".coupled." + name + ".mesh")
+
+    # connect FEM nodes and local stiffness from top-level geometry groups
+    prob.model.connect(name + ".nodes", point_name + ".coupled." + name + ".nodes")
+    prob.model.connect(name + ".local_stiff_transformed", point_name + ".coupled." + name + ".local_stiff_transformed")
+
+    # connect performance-related variables
+    # (these are optional but useful if used elsewhere in the AS point)
+    try:
+        prob.model.connect(name + ".t_over_c", point_name + "." + name + "_perf.t_over_c")
+    except Exception:
+        pass
+
+# Set up the problem
+# Debug: print surface dict keys in top-level geometry groups before setup
+print('wing_single_spar surface keys:', list(group_single_spar.options['surface'].keys()))
+print('wing_double_spar surface keys:', list(group_double_spar.options['surface'].keys()))
+
 prob.setup(check=True)
 
 # Only run analysis
 # prob.run_model()
 
-# Run optimization
-prob.run_driver()
+# For debugging: just run the model once instead of running the optimizer
+prob.run_model()
 
 print("Single Spar CL:", prob[point_name + ".wing_single_spar.CL"])
 print("Double Spar CL:", prob[point_name + ".wing_double_spar.CL"])

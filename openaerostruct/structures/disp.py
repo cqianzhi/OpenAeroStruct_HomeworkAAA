@@ -44,4 +44,12 @@ class Disp(om.ExplicitComponent):
     def compute(self, inputs, outputs):
         # Obtain the relevant portions of disp_aug and store the reshaped
         # displacements in disp
+        # Diagnostics: check for non-finite values in the solver output
+        try:
+            import numpy as _np
+            if not _np.isfinite(inputs["disp_aug"]).all():
+                print("[Disp] WARNING: non-finite entries in disp_aug", int((~_np.isfinite(inputs["disp_aug"])).sum()))
+        except Exception:
+            pass
+
         outputs["disp"] = inputs["disp_aug"][:-6].reshape((-1, 6))
