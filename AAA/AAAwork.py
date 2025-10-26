@@ -9,7 +9,7 @@ from openaerostruct.utils.constants import grav_constant
 
 # Create a dictionary to store options about the surface 
 # 几何定义和网格生成
-mesh_dict = {"num_y": 7, "wing_type": "CRM", "symmetry": True}
+mesh_dict = {"num_y": 7, "num_x": 2, "wing_type": "CRM", "symmetry": True}
 
 mesh, twist_cp = generate_mesh(mesh_dict)
 
@@ -21,7 +21,7 @@ surface_single_spar = {
     # reflected across the plane y = 0
     # "S_ref_type": "wetted",  # how we compute the wing area,
     # can be 'wetted' or 'projected'
-    "fem_model_type": "wingbox",
+    "fem_model_type": "tube",
     "mx": 2,
     "my": 7,
     "thickness_cp": np.array([0.1, 0.2, 0.3]),
@@ -34,12 +34,12 @@ surface_single_spar = {
     # obtained from aerodynamic analysis of the surface to get
     # the total CL and CD.
     # These CL0 and CD0 values do not vary wrt alpha.
-    # "CL0": 0.0,  # CL of the surface at alpha=0
-    # "CD0": 0.015,  # CD of the surface at alpha=0
+    "CL0": 0.0,  # CL of the surface at alpha=0
+    "CD0": 0.015,  # CD of the surface at alpha=0
     # Airfoil properties for viscous drag calculation
-    # "k_lam": 0.05,  # percentage of chord with laminar
+    "k_lam": 0.05,  # percentage of chord with laminar
     # flow, used for viscous drag
-    # "t_over_c_cp": np.array([0.15]),  # thickness over chord ratio (NACA0015)
+    "t_over_c_cp": np.array([0.15]),  # thickness over chord ratio (NACA0015)
     "c_max_t": 0.303,  # chordwise location of maximum (NACA0015)
     # thickness
     "with_viscous": True,
@@ -51,7 +51,7 @@ surface_single_spar = {
     "yield": 500.0e6,
     "safety_factor": 2.5,  # [Pa] yield stress divided by 2.5 for limiting case
     "rho": 3.0e3,  # [kg/m^3] material density
-    # "fem_origin": 0.35,  # normalized chordwise location of the spar
+    "fem_origin": 0.35,  # normalized chordwise location of the spar
 
     # BOOM
     "boom_positions": [0.25],        # 单梁
@@ -73,7 +73,7 @@ surface_double_spar = {
     # reflected across the plane y = 0
     # "S_ref_type": "wetted",  # how we compute the wing area,
     # can be 'wetted' or 'projected'
-    "fem_model_type": "wingbox",
+    "fem_model_type": "tube",
     "mx": 2,
     "my": 7,
     "thickness_cp": np.array([0.1, 0.2, 0.3]),
@@ -86,12 +86,12 @@ surface_double_spar = {
     # obtained from aerodynamic analysis of the surface to get
     # the total CL and CD.
     # These CL0 and CD0 values do not vary wrt alpha.
-    # "CL0": 0.0,  # CL of the surface at alpha=0
-    # "CD0": 0.015,  # CD of the surface at alpha=0
+    "CL0": 0.0,  # CL of the surface at alpha=0
+    "CD0": 0.015,  # CD of the surface at alpha=0
     # Airfoil properties for viscous drag calculation
-    # "k_lam": 0.05,  # percentage of chord with laminar
+    "k_lam": 0.05,  # percentage of chord with laminar
     # flow, used for viscous drag
-    # "t_over_c_cp": np.array([0.15]),  # thickness over chord ratio (NACA0015)
+    "t_over_c_cp": np.array([0.15]),  # thickness over chord ratio (NACA0015)
     "c_max_t": 0.303,  # chordwise location of maximum (NACA0015)
     # thickness
     "with_viscous": True,
@@ -103,7 +103,7 @@ surface_double_spar = {
     "yield": 500.0e6,
     "safety_factor": 2.5,  # [Pa] yield stress divided by 2.5 for limiting case
     "rho": 3.0e3,  # [kg/m^3] material density
-    # "fem_origin": 0.35,  # normalized chordwise location of the spar
+    "fem_origin": 0.35,  # normalized chordwise location of the spar
 
     # BOOM
     # "boom_positions": [0.25],        # 单梁
@@ -136,13 +136,13 @@ indep_var_comp.add_output("load_factor", val=1.0) # 载荷系数（1.0 = 平飞�
 indep_var_comp.add_output("empty_cg", val=np.array([25.6, 0.0, 0.0]), units="m") # 空机重心位置
 prob.model.add_subsystem("inputs", indep_var_comp, promotes=["*"])
 
-# group_single_spar = AerostructGeometry(surface=surface_single_spar)
-# group_double_spar = AerostructGeometry(surface=surface_double_spar)
+# Create and add AerostructGeometry groups for each surface at the top level
+group_single_spar = AerostructGeometry(surface=surface_single_spar)
+group_double_spar = AerostructGeometry(surface=surface_double_spar)
 
-
-# Add tmp_group to the problem with the name of the surface.
-# prob.model.add_subsystem("wing_single_spar", group_single_spar)
-# prob.model.add_subsystem("wing_double_spar", group_double_spar)
+# Add groups to the problem with the name of the surface.
+prob.model.add_subsystem("wing_single_spar", group_single_spar)
+prob.model.add_subsystem("wing_double_spar", group_double_spar)
 
 point_name = "AS_point_0"
 
@@ -198,16 +198,15 @@ prob.driver.recording_options["includes"] = ["*"]
 
 # Setup problem and add design variables, constraint, and objective
 # 扭转控制点
-prob.model.add_design_var(point_name + ".wing_single_spar.twist_cp", lower=-5., upper=10.)
-prob.model.add_design_var(point_name + ".wing_double_spar.twist_cp", lower=-5., upper=10.)
+# Design variables live on the top-level surface groups (not on the AS point)
+prob.model.add_design_var("wing_single_spar.twist_cp", lower=-5.0, upper=10.0)
+prob.model.add_design_var("wing_double_spar.twist_cp", lower=-5.0, upper=10.0)
 # 厚度控制点
-prob.model.add_design_var(point_name + ".wing_single_spar.thickness_cp",
-                          lower=0.01, upper=0.1, scaler=1e2)
-prob.model.add_design_var(point_name + ".wing_double_spar.thickness_cp",
-                          lower=0.01, upper=0.1, scaler=1e2)
+prob.model.add_design_var("wing_single_spar.thickness_cp", lower=0.01, upper=0.1, scaler=1e2)
+prob.model.add_design_var("wing_double_spar.thickness_cp", lower=0.01, upper=0.1, scaler=1e2)
 # 结构失效约束
-prob.model.add_constraint(point_name + ".wing_single_spar.failure", upper=0.0)
-prob.model.add_constraint(point_name + ".wing_double_spar.failure", upper=0.0)
+prob.model.add_constraint(point_name + ".wing_single_spar_perf.failure", upper=0.0)
+prob.model.add_constraint(point_name + ".wing_double_spar_perf.failure", upper=0.0)
 # prob.model.add_constraint(point_name + ".wing_single_spar.thickness_intersects", upper=0.0)
 # prob.model.add_constraint(point_name + ".wing_double_spar.thickness_intersects", upper=0.0)
 
